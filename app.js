@@ -8,6 +8,7 @@ const DEFAULT_ROCKSTARS = [
     id: "wall_273qn0j51406sfj",
     name: "Adriel Jarred Maja",
     program: "FENWICK ATSX",
+    pillar: "Tech-Powered",
     award: "Q3 2026 Top Advisor",
     year: "2026",
     quarter: "Q2",
@@ -20,6 +21,7 @@ const DEFAULT_ROCKSTARS = [
     id: "wall_891kn3f92019a12",
     name: "Alvarez Maybelyn",
     program: "TRAVELLING TIGERS",
+    pillar: "Human-Centered",
     award: "Q3 2026 Top Advisor",
     year: "2026",
     quarter: "Q2",
@@ -34,6 +36,7 @@ const DEFAULT_ROCKSTARS = [
     id: "wall_443pl1o99281x77",
     name: "Angel Bert Hayawon",
     program: "FENWICK ATSX",
+    pillar: "Tech-Powered",
     award: "Q3 2026 Top Advisor",
     year: "2026",
     quarter: "Q2",
@@ -46,6 +49,7 @@ const DEFAULT_ROCKSTARS = [
     id: "wall_552kk3l11029z88",
     name: "Francis James Dela Cruz",
     program: "SMILE SHINE SERVE",
+    pillar: "Intelligence-Fueled",
     award: "Q2 2026 Leadership Excellence",
     year: "2026",
     quarter: "Q2",
@@ -58,6 +62,7 @@ const DEFAULT_ROCKSTARS = [
     id: "wall_771aa9p44820m33",
     name: "Clarisse Anne Santos",
     program: "TRAVELLING TIGERS",
+    pillar: "Human-Centered",
     award: "Q1 2026 Quality Champion",
     year: "2026",
     quarter: "Q1",
@@ -71,6 +76,7 @@ const DEFAULT_ROCKSTARS = [
     id: "wall_112bb8c33910q55",
     name: "Jerome Vance Tan",
     program: "FENWICK ATSX",
+    pillar: "Tech-Powered",
     award: "Q4 2025 Hall of Fame Legend",
     year: "2025",
     quarter: "Q4",
@@ -85,6 +91,7 @@ const DEFAULT_ROCKSTARS = [
 let rockstars = [];
 let activeYear = "all";
 let activeQuarter = "all";
+let activePillar = "all";
 let currentSearch = "";
 let currentSelectedWallId = null;
 let uploadedPhotoBase64 = "";
@@ -94,9 +101,13 @@ const rockstarsGrid = document.getElementById("rockstarsGrid");
 const emptyState = document.getElementById("emptyState");
 const yearFilterGroup = document.getElementById("yearFilterGroup");
 const quarterFilterGroup = document.getElementById("quarterFilterGroup");
+const pillarFilterGroup = document.getElementById("pillarFilterGroup");
 const searchInput = document.getElementById("searchInput");
 const btnClearSearch = document.getElementById("btnClearSearch");
 const btnResetFilters = document.getElementById("btnResetFilters");
+const summaryTotalRecognitions = document.getElementById("summaryTotalRecognitions");
+const summaryTopProgram = document.getElementById("summaryTopProgram");
+const summaryLeadingPillar = document.getElementById("summaryLeadingPillar");
 
 // Stats Elements
 const statInducted = document.getElementById("statInducted");
@@ -169,15 +180,32 @@ function loadData() {
   if (stored) {
     try {
       rockstars = JSON.parse(stored);
+      rockstars = rockstars.map(normalizeRockstarRecord);
     } catch (e) {
       console.error("Failed to parse local storage, reverting to default dataset", e);
-      rockstars = [...DEFAULT_ROCKSTARS];
+      rockstars = [...DEFAULT_ROCKSTARS].map(normalizeRockstarRecord);
       saveData();
     }
   } else {
-    rockstars = [...DEFAULT_ROCKSTARS];
+    rockstars = [...DEFAULT_ROCKSTARS].map(normalizeRockstarRecord);
     saveData();
   }
+}
+
+function normalizeRockstarRecord(item) {
+  const pillar = item.pillar || inferPillar(item.program);
+  return { ...item, pillar };
+}
+
+function inferPillar(program = "") {
+  const normalized = program.toUpperCase();
+  if (normalized.includes("TIGERS") || normalized.includes("SERVICE") || normalized.includes("SMILE")) {
+    return "Human-Centered";
+  }
+  if (normalized.includes("FENWICK") || normalized.includes("ATSX") || normalized.includes("DIGITAL") || normalized.includes("TECH")) {
+    return "Tech-Powered";
+  }
+  return "Intelligence-Fueled";
 }
 
 function saveData() {
@@ -186,20 +214,20 @@ function saveData() {
 
 // --- MAIN RENDER FUNCTION ---
 function render() {
-  // Filter rockstars based on activeYear, activeQuarter, currentSearch
   const filtered = rockstars.filter(item => {
     const matchYear = activeYear === "all" || item.year === activeYear;
     const matchQuarter = activeQuarter === "all" || item.quarter === activeQuarter;
+    const matchPillar = activePillar === "all" || item.pillar === activePillar;
     const q = currentSearch.toLowerCase().trim();
     const matchSearch = !q || 
       item.name.toLowerCase().includes(q) || 
       item.program.toLowerCase().includes(q) || 
-      item.award.toLowerCase().includes(q);
+      item.award.toLowerCase().includes(q) ||
+      (item.pillar || "").toLowerCase().includes(q);
 
-    return matchYear && matchQuarter && matchSearch;
+    return matchYear && matchQuarter && matchPillar && matchSearch;
   });
 
-  // Render Grid
   if (filtered.length === 0) {
     rockstarsGrid.style.display = "none";
     emptyState.style.display = "block";
@@ -209,10 +237,8 @@ function render() {
     rockstarsGrid.innerHTML = filtered.map(item => createRockstarCardHTML(item)).join("");
   }
 
-  // Update Header Stats
   updateStatsCounters();
-
-  // Render Admin Manage Table if Open
+  updateRecognitionSummary();
   renderManageTable();
 }
 
@@ -249,6 +275,28 @@ function updateStatsCounters() {
   statCrownedYear.innerText = year2026Count;
   statYearsLegends.innerText = "1";
   consoleTotalCount.innerText = totalInducted;
+}
+
+function updateRecognitionSummary() {
+  const total = rockstars.length;
+  const countsByProgram = {};
+
+  rockstars.forEach(item => {
+    const key = item.program || "Unassigned";
+    countsByProgram[key] = (countsByProgram[key] || 0) + 1;
+  });
+
+  const topProgram = Object.entries(countsByProgram).sort((a, b) => b[1] - a[1])[0];
+  const pillarCounts = {
+    "Human-Centered": rockstars.filter(item => item.pillar === "Human-Centered").length,
+    "Tech-Powered": rockstars.filter(item => item.pillar === "Tech-Powered").length,
+    "Intelligence-Fueled": rockstars.filter(item => item.pillar === "Intelligence-Fueled").length,
+  };
+  const leadingPillar = Object.entries(pillarCounts).sort((a, b) => b[1] - a[1])[0];
+
+  summaryTotalRecognitions.innerText = total;
+  summaryTopProgram.innerText = topProgram ? topProgram[0] : "—";
+  summaryLeadingPillar.innerText = leadingPillar ? leadingPillar[0] : "—";
 }
 
 function animateCounters() {
@@ -290,6 +338,16 @@ function setupEventListeners() {
     }
   });
 
+  // Pillar Filter Buttons
+  pillarFilterGroup.addEventListener("click", (e) => {
+    if (e.target.classList.contains("pill-btn")) {
+      pillarFilterGroup.querySelectorAll(".pill-btn").forEach(btn => btn.classList.remove("active-pillar"));
+      e.target.classList.add("active-pillar");
+      activePillar = e.target.getAttribute("data-pillar");
+      render();
+    }
+  });
+
   // Search Input Handler
   searchInput.addEventListener("input", (e) => {
     currentSearch = e.target.value;
@@ -307,6 +365,7 @@ function setupEventListeners() {
   btnResetFilters.addEventListener("click", () => {
     activeYear = "all";
     activeQuarter = "all";
+    activePillar = "all";
     currentSearch = "";
     searchInput.value = "";
     btnClearSearch.style.display = "none";
@@ -316,6 +375,9 @@ function setupEventListeners() {
 
     quarterFilterGroup.querySelectorAll(".pill-btn").forEach(btn => btn.classList.remove("active-orange"));
     quarterFilterGroup.querySelector('[data-quarter="all"]').classList.add("active-orange");
+
+    pillarFilterGroup.querySelectorAll(".pill-btn").forEach(btn => btn.classList.remove("active-pillar"));
+    pillarFilterGroup.querySelector('[data-pillar="all"]').classList.add("active-pillar");
 
     render();
   });

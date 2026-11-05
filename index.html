@@ -208,6 +208,17 @@
               <button class="pill-btn" data-quarter="Q4">Q4</button>
             </div>
           </div>
+
+          <!-- Pillar Filter -->
+          <div class="filter-block">
+            <span class="filter-label">PILLAR</span>
+            <div class="pill-options" id="pillarFilterGroup">
+              <button class="pill-btn active-pillar" data-pillar="all">All pillars</button>
+              <button class="pill-btn" data-pillar="Human-Centered">Human-Centered</button>
+              <button class="pill-btn" data-pillar="Tech-Powered">Tech-Powered</button>
+              <button class="pill-btn" data-pillar="Intelligence-Fueled">Intelligence-Fueled</button>
+            </div>
+          </div>
         </div>
 
         <!-- Search Bar -->
@@ -217,6 +228,21 @@
             <input type="text" id="searchInput" placeholder="Search name, program, award..." autocomplete="off">
             <button id="btnClearSearch" class="btn-clear-search" style="display: none;">&times;</button>
           </div>
+        </div>
+      </div>
+
+      <div class="insight-summary" aria-label="Recognition summary">
+        <div class="insight-card accent-pink">
+          <span class="insight-label">Total recognitions</span>
+          <strong class="insight-value" id="summaryTotalRecognitions">0</strong>
+        </div>
+        <div class="insight-card accent-cyan">
+          <span class="insight-label">Top program</span>
+          <strong class="insight-value" id="summaryTopProgram">—</strong>
+        </div>
+        <div class="insight-card accent-yellow">
+          <span class="insight-label">Leading pillar</span>
+          <strong class="insight-value" id="summaryLeadingPillar">—</strong>
         </div>
       </div>
 
