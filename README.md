@@ -21,13 +21,36 @@ Welcome to the **Concentrix Game-Changers Portal**! This application is designed
 
 ## Getting Started
 
-To view the application locally, simply open the `index.html` file in your preferred web browser.
+This project now includes a shared server-side data layer so awardees can be viewed by multiple users from different browsers/devices when the app is served from the same local or hosted environment.
+
+### Run the app
 
 ```bash
-# Example
-start index.html # On Windows
-open index.html # On macOS
+npm install
+npm start
 ```
+
+If port 3000 is already occupied, the app will automatically retry on the next available port and print the new URL in the terminal.
+
+Then open the URL shown in the terminal, usually:
+
+```text
+http://localhost:3000
+```
+
+If 3000 is busy, it may switch to:
+
+```text
+http://localhost:3001
+```
+
+### Alternative quick local launch
+
+```bash
+start index.html
+```
+
+This still works for a quick demo, but the shared data and admin login flow are powered by the backend server.
 
 ## Administration
 

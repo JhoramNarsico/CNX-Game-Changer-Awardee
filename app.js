@@ -174,21 +174,35 @@ document.addEventListener("DOMContentLoaded", () => {
   animateCounters();
 });
 
-// --- DATA LOCAL STORAGE HANDLING ---
-function loadData() {
-  const stored = localStorage.getItem("cnx_rockstars_data");
-  if (stored) {
-    try {
-      rockstars = JSON.parse(stored);
-      rockstars = rockstars.map(normalizeRockstarRecord);
-    } catch (e) {
-      console.error("Failed to parse local storage, reverting to default dataset", e);
-      rockstars = [...DEFAULT_ROCKSTARS].map(normalizeRockstarRecord);
-      saveData();
+// --- DATA STORAGE HANDLING ---
+async function loadData() {
+  const fallbackData = () => {
+    const stored = localStorage.getItem("cnx_rockstars_data");
+    if (stored) {
+      try {
+        rockstars = JSON.parse(stored).map(normalizeRockstarRecord);
+        return;
+      } catch (e) {
+        console.warn("Local data was invalid, falling back to defaults.", e);
+      }
     }
-  } else {
+
     rockstars = [...DEFAULT_ROCKSTARS].map(normalizeRockstarRecord);
-    saveData();
+    localStorage.setItem("cnx_rockstars_data", JSON.stringify(rockstars));
+  };
+
+  try {
+    const response = await fetch("/api/rockstars");
+    if (!response.ok) {
+      throw new Error(`API error: ${response.status}`);
+    }
+
+    const data = await response.json();
+    rockstars = Array.isArray(data) ? data.map(normalizeRockstarRecord) : [...DEFAULT_ROCKSTARS].map(normalizeRockstarRecord);
+    localStorage.setItem("cnx_rockstars_data", JSON.stringify(rockstars));
+  } catch (error) {
+    console.warn("Using browser fallback storage because the shared API is unavailable.", error);
+    fallbackData();
   }
 }
 
@@ -208,8 +222,23 @@ function inferPillar(program = "") {
   return "Intelligence-Fueled";
 }
 
-function saveData() {
-  localStorage.setItem("cnx_rockstars_data", JSON.stringify(rockstars));
+async function saveData() {
+  const payload = rockstars.map(normalizeRockstarRecord);
+  localStorage.setItem("cnx_rockstars_data", JSON.stringify(payload));
+
+  try {
+    const response = await fetch("/api/rockstars", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload)
+    });
+
+    if (!response.ok) {
+      throw new Error(`Sync failed: ${response.status}`);
+    }
+  } catch (error) {
+    console.warn("Server sync unavailable; browser storage remains available for this session.", error);
+  }
 }
 
 // --- MAIN RENDER FUNCTION ---
@@ -400,15 +429,27 @@ function setupEventListeners() {
   btnCrewSignIn.addEventListener("click", () => openModal(loginModal));
   document.getElementById("btnCloseLoginModal").addEventListener("click", () => closeModal(loginModal));
 
-  document.getElementById("loginForm").addEventListener("submit", (e) => {
+  document.getElementById("loginForm").addEventListener("submit", async (e) => {
     e.preventDefault();
     const pass = document.getElementById("inputPasscode").value;
-    if (pass === "6100" || pass === "admin") {
+
+    try {
+      const response = await fetch("/api/auth/login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ passcode: pass })
+      });
+
+      const data = await response.json();
+      if (!response.ok || !data.ok) {
+        throw new Error(data.message || "Invalid passcode");
+      }
+
       closeModal(loginModal);
       showToast("Access granted! Welcome to Crew Console", "success");
       openConsoleModal();
-    } else {
-      showToast("Invalid HR Passcode. Please try '6100'", "error");
+    } catch (error) {
+      showToast(error.message || "Invalid HR Passcode. Please try '6100'", "error");
     }
   });
 
@@ -422,7 +463,7 @@ function setupEventListeners() {
   document.getElementById("btnExploreWallFromReveal").addEventListener("click", () => closeModal(revealModal));
 
   // Post Wall Message Form
-  postMessageForm.addEventListener("submit", (e) => {
+  postMessageForm.addEventListener("submit", async (e) => {
     e.preventDefault();
     if (!currentSelectedWallId) return;
 
@@ -432,20 +473,33 @@ function setupEventListeners() {
     if (!author || !text) return;
 
     const rockstar = rockstars.find(r => r.id === currentSelectedWallId);
-    if (rockstar) {
-      if (!rockstar.messages) rockstar.messages = [];
-      const newMsg = {
-        id: "msg_" + Date.now(),
-        author: author,
-        text: text,
-        timestamp: new Date().toISOString().replace("T", " ").substring(0, 16)
-      };
-      rockstar.messages.push(newMsg);
-      saveData();
+    if (!rockstar) return;
+
+    try {
+      const response = await fetch(`/api/rockstars/${currentSelectedWallId}/messages`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ author, text })
+      });
+
+      if (!response.ok) {
+        throw new Error("Unable to post to the recognition wall");
+      }
+
+      const result = await response.json();
+      if (rockstar.messages) {
+        rockstar.messages.push(result.message);
+      } else {
+        rockstar.messages = [result.message];
+      }
+
+      await saveData();
       renderWallModalMessages(rockstar);
-      render(); // Update counts in grid
+      render();
       msgTextInput.value = "";
       showToast("Your appreciation message was posted!", "success");
+    } catch (error) {
+      showToast(error.message || "Unable to post the message.", "error");
     }
   });
 
@@ -480,7 +534,7 @@ function setupEventListeners() {
   btnCancelEdit.addEventListener("click", resetAdminForm);
 
   // Save Rockstar Form Handler
-  rockstarForm.addEventListener("submit", (e) => {
+  rockstarForm.addEventListener("submit", async (e) => {
     e.preventDefault();
     const editId = formRockstarId.value;
 
@@ -491,38 +545,52 @@ function setupEventListeners() {
     const quarter = selectQuarter.value;
     const photo = uploadedPhotoBase64 || "https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=600&q=80";
 
-    if (editId) {
-      // Edit existing
-      const index = rockstars.findIndex(r => r.id === editId);
-      if (index !== -1) {
-        rockstars[index] = {
-          ...rockstars[index],
-          name, program, award, year, quarter, photo
+    try {
+      if (editId) {
+        const index = rockstars.findIndex(r => r.id === editId);
+        if (index !== -1) {
+          rockstars[index] = {
+            ...rockstars[index],
+            name,
+            program,
+            award,
+            year,
+            quarter,
+            photo,
+            pillar: normalizeRockstarRecord({ pillar: rockstars[index].pillar, program }).pillar
+          };
+          showToast(`Updated award details for ${name}!`, "success");
+        }
+      } else {
+        const newRockstar = {
+          id: "wall_" + Date.now(),
+          name,
+          program,
+          award,
+          year,
+          quarter,
+          photo,
+          pillar: normalizeRockstarRecord({ program }).pillar,
+          messages: []
         };
-        showToast(`Updated award details for ${name}!`, "success");
+        rockstars.unshift(newRockstar);
+        showToast(`New Rockstar ${name} crowned successfully! 🌟`, "success");
       }
-    } else {
-      // Add new
-      const newRockstar = {
-        id: "wall_" + Date.now(),
-        name, program, award, year, quarter, photo,
-        messages: []
-      };
-      rockstars.unshift(newRockstar);
-      showToast(`New Rockstar ${name} crowned successfully! 🌟`, "success");
-    }
 
-    saveData();
-    resetAdminForm();
-    render();
-    switchConsoleTab("manage");
+      await saveData();
+      resetAdminForm();
+      render();
+      switchConsoleTab("manage");
+    } catch (error) {
+      showToast("Unable to save the awardee right now.", "error");
+    }
   });
 
   // Reset Default Data Handler
-  btnResetDefaultData.addEventListener("click", () => {
+  btnResetDefaultData.addEventListener("click", async () => {
     if (confirm("Are you sure you want to reset the database to original default rockstars?")) {
-      rockstars = [...DEFAULT_ROCKSTARS];
-      saveData();
+      rockstars = [...DEFAULT_ROCKSTARS].map(normalizeRockstarRecord);
+      await saveData();
       render();
       resetAdminForm();
       showToast("Database restored to default Rockstars!", "success");
@@ -641,13 +709,13 @@ function editRockstar(id) {
   switchConsoleTab("addEdit");
 }
 
-function deleteRockstar(id) {
+async function deleteRockstar(id) {
   const item = rockstars.find(r => r.id === id);
   if (!item) return;
 
   if (confirm(`Are you sure you want to delete ${item.name} from the Hall of Fame?`)) {
     rockstars = rockstars.filter(r => r.id !== id);
-    saveData();
+    await saveData();
     render();
     showToast(`Removed ${item.name} from Hall of Fame.`, "info");
   }
