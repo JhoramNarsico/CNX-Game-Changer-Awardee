@@ -447,7 +447,7 @@ function setupEventListeners() {
 
       closeModal(loginModal);
       showToast("Access granted! Welcome to Crew Console", "success");
-      openConsoleModal();
+      await openConsoleModal();
     } catch (error) {
       showToast(error.message || "Invalid HR Passcode. Please try '6100'", "error");
     }
@@ -643,7 +643,19 @@ function renderWallModalMessages(rockstar) {
 }
 
 // --- HR CONSOLE ADMIN PANEL FUNCTIONS ---
-function openConsoleModal() {
+async function openConsoleModal() {
+  try {
+    const response = await fetch("/api/auth/session", { cache: "no-store" });
+    const session = await response.json();
+    if (!response.ok || !session.ok) {
+      openModal(loginModal);
+      return;
+    }
+  } catch (error) {
+    openModal(loginModal);
+    return;
+  }
+
   renderManageTable();
   openModal(crewConsoleModal);
 }

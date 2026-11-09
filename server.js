@@ -1,5 +1,6 @@
 const express = require('express');
 const cors = require('cors');
+const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
 
@@ -8,6 +9,8 @@ const DEFAULT_PORT = 3000;
 const DATA_DIR = path.join(__dirname, 'data');
 const DATA_FILE = path.join(DATA_DIR, 'rockstars.json');
 const DEFAULT_PASSCODES = ['6100', 'admin'];
+const SESSION_SECRET = process.env.SESSION_SECRET || crypto.randomBytes(32).toString('hex');
+const ADMIN_SESSION_TTL_MS = 8 * 60 * 60 * 1000;
 
 const DEFAULT_ROCKSTARS = [
   {
@@ -86,6 +89,32 @@ function normalizeAllRockstars(items) {
   return items.map(normalizeRockstar);
 }
 
+function createAdminSession(expiresAt) {
+  const payload = String(expiresAt);
+  const signature = crypto.createHmac('sha256', SESSION_SECRET).update(payload).digest('base64url');
+  return `${payload}.${signature}`;
+}
+
+function hasAdminSession(request) {
+  const cookie = (request.headers.cookie || '').split(';').map(value => value.trim())
+    .find(value => value.startsWith('cnx_admin_session='));
+  if (!cookie) return false;
+
+  const [expiresAt, signature] = cookie.slice('cnx_admin_session='.length).split('.');
+  if (!/^\d+$/.test(expiresAt) || Number(expiresAt) <= Date.now() || !signature) return false;
+
+  const expected = Buffer.from(createAdminSession(expiresAt).split('.')[1], 'base64url');
+  const received = Buffer.from(signature, 'base64url');
+  return expected.length === received.length && crypto.timingSafeEqual(expected, received);
+}
+
+function requireAdmin(request, response, next) {
+  if (!hasAdminSession(request)) {
+    return response.status(401).json({ ok: false, message: 'Crew sign-in required.' });
+  }
+  next();
+}
+
 app.use(cors());
 app.use(express.json({ limit: '5mb' }));
 app.use(express.static(__dirname));
@@ -99,14 +128,14 @@ app.get('/api/rockstars', (req, res) => {
   res.json(data);
 });
 
-app.put('/api/rockstars', (req, res) => {
+app.put('/api/rockstars', requireAdmin, (req, res) => {
   const incoming = Array.isArray(req.body) ? req.body : [];
   const normalized = normalizeAllRockstars(incoming);
   writeData(normalized);
   res.json({ ok: true, count: normalized.length });
 });
 
-app.post('/api/rockstars', (req, res) => {
+app.post('/api/rockstars', requireAdmin, (req, res) => {
   const rockstar = normalizeRockstar(req.body || {});
   const data = normalizeAllRockstars(readData());
   data.unshift(rockstar);
@@ -114,7 +143,7 @@ app.post('/api/rockstars', (req, res) => {
   res.status(201).json({ ok: true, rockstar });
 });
 
-app.put('/api/rockstars/:id', (req, res) => {
+app.put('/api/rockstars/:id', requireAdmin, (req, res) => {
   const data = normalizeAllRockstars(readData());
   const index = data.findIndex(item => item.id === req.params.id);
 
@@ -127,7 +156,7 @@ app.put('/api/rockstars/:id', (req, res) => {
   res.json({ ok: true, rockstar: data[index] });
 });
 
-app.delete('/api/rockstars/:id', (req, res) => {
+app.delete('/api/rockstars/:id', requireAdmin, (req, res) => {
   const data = normalizeAllRockstars(readData());
   const filtered = data.filter(item => item.id !== req.params.id);
   writeData(filtered);
@@ -167,7 +196,14 @@ app.post('/api/auth/login', (req, res) => {
     return res.status(401).json({ ok: false, message: 'Invalid passcode.' });
   }
 
+  const expiresAt = Date.now() + ADMIN_SESSION_TTL_MS;
+  const secure = process.env.NODE_ENV === 'production' ? '; Secure' : '';
+  res.setHeader('Set-Cookie', `cnx_admin_session=${createAdminSession(expiresAt)}; HttpOnly; SameSite=Strict; Path=/; Max-Age=${ADMIN_SESSION_TTL_MS / 1000}${secure}`);
   return res.json({ ok: true, message: 'Access granted', role: 'admin' });
+});
+
+app.get('/api/auth/session', (req, res) => {
+  res.json({ ok: hasAdminSession(req) });
 });
 
 app.get('*', (req, res) => {
